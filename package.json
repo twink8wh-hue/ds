@@ -1,0 +1,8 @@
+{
+  "name": "quire-backend",
+  "version": "1.0.0",
+  "dependencies": {
+    "@getbrevo/brevo": "^2.0.0",
+    "firebase-admin": "^12.0.0"
+  }
+}
