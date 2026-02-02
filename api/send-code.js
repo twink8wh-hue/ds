@@ -1,52 +1,45 @@
 const { db } = require('../lib/firebase');
-const nodemailer = require('nodemailer');
+const Brevo = require('@getbrevo/brevo');
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.office365.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.MAIL_USER, // Твоя почта @outlook.com
-    pass: process.env.MAIL_PASS, // Твой 16-значный пароль приложения
-  },
-  tls: {
-    ciphers: 'SSLv3',
-    rejectUnauthorized: false
-  }
-});
+// Инициализация Brevo API
+let apiInstance = new Brevo.TransactionalEmailsApi();
+let apiKey = apiInstance.authentications['apiKey'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
 
 module.exports = async (req, res) => {
+  // Настройка CORS для Android
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'Email required' });
+  if (!email) return res.status(400).json({ error: 'Email is required' });
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
 
   try {
-    // 1. Сохраняем код в Firebase Firestore
+    // 1. Сохраняем код в Firebase (это работает 100%)
     await db.collection('otps').doc(email).set({
       code: code,
       expiresAt: Date.now() + 5 * 60 * 1000
     });
 
-    // 2. Отправляем письмо через Outlook
-    await transporter.sendMail({
-      from: `"Quire App" <${process.env.MAIL_USER}>`,
-      to: email,
-      subject: "Your Login Code",
-      text: `Your login code is: ${code}`,
-      html: `<div style="font-family: sans-serif; padding: 20px;">
-              <h2>Your Login Code</h2>
-              <h1 style="color: #4353E1;">${code}</h1>
-              <p>Valid for 5 minutes.</p>
-             </div>`
-    });
+    // 2. Отправляем письмо через API Brevo
+    const sendSmtpEmail = new Brevo.SendSmtpEmail();
+    sendSmtpEmail.subject = "Your Quire Login Code";
+    sendSmtpEmail.htmlContent = `<html><body><h1>Your code is: ${code}</h1></body></html>`;
+    sendSmtpEmail.sender = { "name": "Quire App", "email": process.env.BREVO_SENDER };
+    sendSmtpEmail.to = [{ "email": email }];
 
-    res.status(200).json({ success: true });
+    await apiInstance.sendTransacEmail(sendSmtpEmail);
+
+    return res.status(200).json({ success: true });
   } catch (error) {
-    console.error("SEND_CODE_ERROR:", error);
-    res.status(500).json({ error: error.message });
+    // Логируем ошибку, чтобы её было видно в Vercel Logs
+    console.error("BREVO_ERROR_DETAIL:", error.response ? error.response.body : error.message);
+    return res.status(500).json({ error: "Failed to send email via Brevo" });
   }
 };
