@@ -1,6 +1,7 @@
 {
   "name": "quire-backend",
   "version": "1.0.0",
+  "main": "index.js",
   "dependencies": {
     "firebase-admin": "^12.0.0",
     "nodemailer": "^6.9.9"
