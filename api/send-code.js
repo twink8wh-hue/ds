@@ -1,34 +1,51 @@
 const { db } = require('../lib/firebase');
-const Brevo = require('@getbrevo/brevo');
+const nodemailer = require('nodemailer');
 
-let apiInstance = new Brevo.TransactionalEmailsApi();
-let apiKey = apiInstance.authentications['apiKey'];
-apiKey.apiKey = process.env.BREVO_API_KEY;
+// Настройка почтового сервера Microsoft Outlook
+const transporter = nodemailer.createTransport({
+  host: "smtp.office365.com", // или "smtp-mail.outlook.com"
+  port: 587,
+  secure: false, // для порта 587 всегда false
+  auth: {
+    user: process.env.MAIL_USER, // Твой логин @outlook.com
+    pass: process.env.MAIL_PASS, // Твой 16-значный ПАРОЛЬ ПРИЛОЖЕНИЯ
+  },
+  tls: {
+    ciphers: 'SSLv3',
+    rejectUnauthorized: false
+  }
+});
 
 module.exports = async (req, res) => {
-  if (req.method !== 'POST') return res.status(405).send();
+  // Настройка CORS (чтобы Android мог достучаться)
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+
+  // Генерируем код
   const code = Math.floor(100000 + Math.random() * 900000).toString();
 
   try {
-    // Сохраняем код в Firestore (база данных)
+    // 1. Сохраняем код в Firebase (ты говорил, это уже работает)
     await db.collection('otps').doc(email).set({
       code: code,
-      expiresAt: Date.now() + 5 * 60 * 1000 // 5 минут
+      expiresAt: Date.now() + 5 * 60 * 1000
     });
 
-    // Настройка письма
-    const sendSmtpEmail = new Brevo.SendSmtpEmail();
-    sendSmtpEmail.subject = "Your Quire Login Code";
-    sendSmtpEmail.htmlContent = `<html><body><h1>Code: ${code}</h1></body></html>`;
-    sendSmtpEmail.sender = { "name": "Quire", "email": process.env.BREVO_SENDER };
-    sendSmtpEmail.to = [{ "email": email }];
-
-    await apiInstance.sendTransacEmail(sendSmtpEmail);
+    // 2. Отправляем письмо через твой Outlook
+    await transporter.sendMail({
+      from: `"Quire App" <${process.env.MAIL_USER}>`,
+      to: email,
+      subject: "Your Login Code",
+      text: `Your login code is: ${code}`,
+      html: `<b>Your code is: ${code}</b>`
+    });
 
     res.status(200).json({ success: true });
   } catch (error) {
+    console.error("ОШИБКА ОТПРАВКИ:", error);
     res.status(500).json({ error: error.message });
   }
 };
